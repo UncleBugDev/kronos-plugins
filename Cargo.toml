@@ -5,6 +5,7 @@ members = [
     "tab-plugin",
     "menu-plugin",
     "template-plugin",
+    "kronos-essentials",
 ]
 
 [workspace.package]
