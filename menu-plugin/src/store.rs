@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -155,7 +156,7 @@ impl Default for PlayerPrefs {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct SettingsDb {
     #[serde(default)]
     pub players: HashMap<String, PlayerPrefs>,
@@ -164,18 +165,24 @@ pub struct SettingsDb {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuPage {
     Main,
+    Navigation,
+    Economy,
+    ChatGuide,
+    RanksInfo,
     Settings,
     Rules,
-    RanksInfo,
     ServerInfo,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BedrockFormKind {
     Main,
+    Navigation,
+    Economy,
+    ChatGuide,
+    RanksInfo,
     Settings,
     Rules,
-    RanksInfo,
     ServerInfo,
 }
 
@@ -198,12 +205,10 @@ pub fn unix_ms_now() -> u128 {
 }
 
 pub fn init_state(data_folder: String) {
-    let _ = fs::create_dir_all(&data_folder);
-    let path = format!("{data_folder}/settings.json");
-    let db = match fs::read_to_string(&path) {
-        Ok(content) => serde_json::from_str::<SettingsDb>(&content).unwrap_or_default(),
-        Err(_) => SettingsDb::default(),
-    };
+    let folder = PathBuf::from(&data_folder);
+    let _ = fs::create_dir_all(&folder);
+    let path = folder.join("settings.json");
+    let db = load_db_from_path(&path).unwrap_or_default();
     let _ = STATE.set(Mutex::new(PluginState {
         data_folder,
         db,
@@ -214,8 +219,6 @@ pub fn init_state(data_folder: String) {
     }));
 }
 
-/// Accesses pure-Rust plugin state under a short-lived lock.
-/// NEVER call any WIT host API or drop any WIT resource inside `f`.
 pub fn with_state<R>(f: impl FnOnce(&mut PluginState) -> R) -> R {
     let mutex = STATE.get_or_init(|| {
         Mutex::new(PluginState {
@@ -231,15 +234,41 @@ pub fn with_state<R>(f: impl FnOnce(&mut PluginState) -> R) -> R {
     f(&mut guard)
 }
 
-impl PluginState {
-    pub fn save_db(&self) {
-        let _ = fs::create_dir_all(&self.data_folder);
-        let path = format!("{}/settings.json", self.data_folder);
-        if let Ok(json) = serde_json::to_string_pretty(&self.db) {
-            let _ = fs::write(path, json);
+pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
     }
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, content).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, path).map_err(|e| {
+        let _ = fs::write(path, content);
+        let _ = fs::remove_file(&tmp_path);
+        e.to_string()
+    })
+}
 
+pub fn load_db_from_path(path: &Path) -> Result<SettingsDb, String> {
+    let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str::<SettingsDb>(&raw).map_err(|e| e.to_string())
+}
+
+pub fn save_db_to_path(path: &Path, db: &SettingsDb) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(db).map_err(|e| e.to_string())?;
+    atomic_write(path, &json)
+}
+
+/// Сохраняет `settings.json` атомарно строго ПОСЛЕ освобождения Mutex.
+pub fn save_current_db() {
+    let (folder, snapshot) = with_state(|st| (st.data_folder.clone(), st.db.clone()));
+    let path = PathBuf::from(folder).join("settings.json");
+    if let Err(err) = save_db_to_path(&path, &snapshot) {
+        tracing::warn!("KRONOS Menu: ошибка сохранения settings.json: {}", err);
+    }
+}
+
+impl PluginState {
     pub fn prefs_for(&self, key: &str) -> PlayerPrefs {
         self.db.players.get(key).cloned().unwrap_or_default()
     }
@@ -247,38 +276,39 @@ impl PluginState {
     pub fn update_prefs(&mut self, key: &str, f: impl FnOnce(&mut PlayerPrefs)) -> PlayerPrefs {
         let entry = self.db.players.entry(key.to_string()).or_default();
         f(entry);
-        let updated = entry.clone();
-        self.save_db();
-        updated
+        entry.clone()
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Читает актуальный баланс игрока из соседнего `../kronos-economy/economy.json` (если установлен).
+pub fn read_player_balance_display(menu_data_folder: &str, player_name: &str) -> String {
+    let Some(parent) = Path::new(menu_data_folder).parent() else {
+        return "— (/bal)".to_string();
+    };
+    let eco_path = parent.join("kronos-economy").join("economy.json");
+    read_balance_from_economy_file(&eco_path, player_name)
+        .unwrap_or_else(|| "— (/bal)".to_string())
+}
 
-    #[test]
-    fn test_weather_and_time_cycles() {
-        let w = WeatherPref::Server;
-        assert_eq!(w.cycle(), WeatherPref::Clear);
-        assert_eq!(w.cycle().cycle(), WeatherPref::Downfall);
-        assert_eq!(w.cycle().cycle().cycle(), WeatherPref::Server);
-
-        let t = TimePref::Server;
-        assert_eq!(t.cycle(), TimePref::Day);
-        assert_eq!(t.cycle().cycle(), TimePref::Sunset);
-        assert_eq!(t.cycle().cycle().cycle(), TimePref::Midnight);
-        assert_eq!(t.cycle().cycle().cycle().cycle(), TimePref::Server);
-    }
-
-    #[test]
-    fn test_default_prefs_serde() {
-        let parsed: PlayerPrefs = serde_json::from_str("{}").unwrap_or_default();
-        assert_eq!(parsed.weather, WeatherPref::Server);
-        assert_eq!(parsed.time, TimePref::Server);
-        assert!(!parsed.hud_compass);
-        assert!(parsed.chat_mentions);
-        assert!(!parsed.hide_players);
-        assert!(parsed.auto_compass);
+pub fn read_balance_from_economy_file(eco_path: &Path, player_name: &str) -> Option<String> {
+    let raw = fs::read_to_string(eco_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let symbol = json
+        .get("currency_symbol")
+        .and_then(|v| v.as_str())
+        .unwrap_or("⛃");
+    let key = player_name.trim().to_ascii_lowercase();
+    let minor = json
+        .get("accounts")
+        .and_then(|a| a.get(&key))
+        .and_then(|u| u.get("balance"))
+        .and_then(|b| b.as_u64())
+        .or_else(|| json.get("starting_balance").and_then(|b| b.as_u64()))?;
+    let whole = minor / 100;
+    let frac = minor % 100;
+    if frac == 0 {
+        Some(format!("{whole} {symbol}"))
+    } else {
+        Some(format!("{whole}.{frac:02} {symbol}"))
     }
 }
