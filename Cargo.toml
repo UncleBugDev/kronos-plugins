@@ -5,6 +5,10 @@ members = [
     "tab-plugin",
     "menu-plugin",
     "template-plugin",
+    "kronos-essentials",
+    "kronos-ranks",
+    "kronos-economy",
+    "kronos-warps",
 ]
 
 [workspace.package]

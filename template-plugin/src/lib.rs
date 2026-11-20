@@ -101,7 +101,7 @@ impl EventHandler<PlayerJoinEvent> for JoinHandler {
         // Safe vanilla 1.20.1 sound (avoid play_sound trap):
         player.play_custom_sound(
             "minecraft:entity.experience_orb.pickup",
-            pumpkin_plugin_api::wit::pumpkin::plugin::sound::SoundCategory::Master,
+            pumpkin_plugin_api::wit::pumpkin::plugin::sounds::SoundCategory::Master,
             1.0,
             1.0,
         );
@@ -191,7 +191,7 @@ impl Plugin for TemplatePlugin {
         let cmd = Command::new(&["template".into(), "tmpl".into()], "Template command")
             .execute(TemplateCmd)
             .then(
-                CommandNode::argument("sub", &ArgumentType::String(StringType::Word))
+                CommandNode::argument("sub", &ArgumentType::String(StringType::SingleWord))
                     .execute(TemplateCmd),
             );
         context.register_command(cmd, PERM_USE);

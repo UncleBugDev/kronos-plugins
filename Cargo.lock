@@ -141,6 +141,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
+name = "kronos-economy"
+version = "1.0.0"
+dependencies = [
+ "pumpkin-plugin-api",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "kronos-essentials"
+version = "0.1.0"
+dependencies = [
+ "pumpkin-plugin-api",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "kronos-ranks"
+version = "2.0.0"
+dependencies = [
+ "pumpkin-plugin-api",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "kronos-warps"
+version = "1.0.0"
+dependencies = [
+ "pumpkin-plugin-api",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -343,6 +383,16 @@ dependencies = [
 
 [[package]]
 name = "tab-plugin"
+version = "0.1.0"
+dependencies = [
+ "pumpkin-plugin-api",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "template-plugin"
 version = "0.1.0"
 dependencies = [
  "pumpkin-plugin-api",
