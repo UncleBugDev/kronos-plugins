@@ -9,6 +9,7 @@ members = [
     "kronos-ranks",
     "kronos-economy",
     "kronos-warps",
+    "kronos-chat",
 ]
 
 [workspace.package]
